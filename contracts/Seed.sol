@@ -21,10 +21,11 @@ contract Seed {
         uint rewardCount;
     }
     
-    // An array with all balances 
+    // A array of buckets with all balances
+    // How do you explain the frozenAccounts variable mapping? 
     mapping (address => uint256) public balOf;
     mapping (address => mapping(address => uint)) public allowance;
-    mapping (mapping(address => mapping(uint256 => bool)) frozenAccounts;
+    mapping (mapping(address => mapping(uint256 => bool))) frozenAccounts;
     
     // Note @dev, in production, employ the use of a library to safely and completely
     // remove item from the array.
@@ -50,7 +51,8 @@ contract Seed {
         uint256 initialSupply,
         string memory tokenName,
         string memory tokenSymbol
-    ) {
+    ); 
+    {
         totalSupply = initialSupply * 10 ** uint256(decimals);
         balOf[msg.sender] = totalSupply;               
         name = tokenName;                               
