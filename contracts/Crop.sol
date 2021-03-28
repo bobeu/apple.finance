@@ -1,14 +1,14 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0
 
 pragma solidity >=0.4.22 <0.9.0;
 
-interface seedRecipient { 
+interface cropRecipient { 
     function getApproval(address _from, uint256 _value, address _token, bytes calldata _extraData) external;
 }
 
-contract Seed {
+contract Crop {
     // Public variables of the token
-    address public owner;
+    address public payable owner;
     string public name;
     string public symbol;
     uint8 public decimals = 18;
@@ -16,25 +16,23 @@ contract Seed {
     uint256 userIndex = 0;
     
     struct User{
-        bool isInvestor;
-        uint investmentCount;
-        uint reward;
-        uint rewardCount;
+        bool isSeedInvestor;
     }
     
     // An array with all balances 
     mapping (address => uint256) public balOf;
     mapping (address => mapping(address => uint)) public allowance;
-    mapping (mapping(address => mapping(uint256 => bool)) frozenAccounts;
+    mapping (address => mapping(uint => bool)) alcs;
+    mapping (address => User)[] public users;
     
     // Note @dev, in production, employ the use of a library to safely and completely
     // remove item from the array.
-    mapping (address => User)[] public users;
+    mapping (address => User)[] public holders;
     
-    function setUserInfo(address _target, uint _count, uint _reward, uint _rewardCount) Internal {
+    function _setUserInfo(address _target, uint _count, uint _reward, uint _rewardCount) internal {
         users[_target][userIndex] = User(true, _count, _reward, _rewardCount);
     }
-    
+
     // Generates a public event on the blockchain that will notify clients
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed _owner, address indexed _spender, uint256 _value);
@@ -45,6 +43,14 @@ contract Seed {
         require(_caller == owner, "UnAuthorized");
         _;
     }
+    
+    modifier isNotFreezed(address _any) {
+        require(frozenAccounts[_any] == false, "Account is frozen"); _;
+    }
+    
+    modifier hasEnofBal(address _sndr, uint _value) {
+        require(balOf[_sndr] > _value, "Insufficient CROP balance"); _;
+    }
 
     // Initializes token properties.
     constructor(
@@ -54,22 +60,17 @@ contract Seed {
     ) {
         totalSupply = initialSupply * 10 ** uint256(decimals);
         balOf[msg.sender] = totalSupply;               
-        name = tokenName;                               
+        name = tokenName;
         symbol = tokenSymbol;
-        owner = msg.sender;                          
+        owner = msg.sender;
     }
     
-    // // Update state varibles for 
-    // function setState() Internal {
-        
-    // }
     
     // Internal transfer function
-    function _transfer(address _from, address _to, uint _value) internal {
+    function _transfer(address _from, address _to, uint _value) internal isNotFreezed(_from) hasEnofBal(_from, _value) {
         require(_to != address(0));
-        require(balOf[_from] >= _value);
         require(balOf[_to] + _value > balOf[_to]);
-        uint previousBalances = balanceOf[_from] + balanceOf[_to];
+        uint previousBalances = balOf[_from] + balOf[_to];
         balOf[_from] -= _value;
         balOf[_to] += _value;
         emit Transfer(_from, _to, _value);
@@ -98,7 +99,7 @@ contract Seed {
     function approveAndCall(address _spender, uint256 _value, bytes memory _extraData)
         public
         returns (bool success) {
-        tokenRecipient spender = tokenRecipient(_spender);
+        cropRecipient spender = cropRecipient(_spender);
         if (approve(_spender, _value)) {
             spender.receiveApproval(msg.sender, _value, address(this), _extraData);
             return true;
@@ -112,9 +113,8 @@ contract Seed {
         return true;
     }
    
-    function burn(uint256 _value) public returns (bool success) {
-        require(balanceOf[msg.sender] >= _value);   
-        balanceOf[msg.sender] -= _value;            
+    function burn(uint256 _value) public hasEnofBal(msg.sender) returns (bool success) {
+        balOf[msg.sender] -= _value;            
         totalSupply -= _value;                    
         emit Burn(msg.sender, _value);
         return true;
@@ -130,10 +130,14 @@ contract Seed {
         return true;
     }
     
-    function freezeAlc(address _target, uint256 _val) public onlyOwner(msg.sender) {
-        frozenAccounts[_target][_val] == false;
+    function freezeAlc(address _target) public onlyOwner(msg.sender) {
+        require(alcs[_target][balOf[_target]] == true, "Already frozen");
+        alcs[_target][balOf[_target]] == false;
+    }
+    
+    function unfreeze(address _any) Public onlyOwner(msg.sender) {
+        require(alcs[_target][balOf[_target]] == false, "Already frozen");
+        alcs[_target][balOf[_target]] == true;
     }
     
 }
-
-
