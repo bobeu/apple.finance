@@ -16,5 +16,9 @@
   "bugs": {
     "url": "https://github.com/bobeu/plantashun/issues"
   },
-  "homepage": "https://github.com/bobeu/plantashun#readme"
+  "homepage": "https://github.com/bobeu/plantashun#readme",
+  "devDependencies": {
+    "@openzeppelin/contracts": "^4.0.0",
+    "zeppelin-solidity": "^1.12.0"
+  }
 }
