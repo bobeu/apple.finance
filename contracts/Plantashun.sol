@@ -15,7 +15,7 @@ abstract contract Plantashun {
     IERC20 public _crop;
     uint256 public seedHoldersCount;
     uint256 public cropHoldersCount;
-    uint256 constant p1 = 7 days * 2 + (1 days);
+    uint256 constant p1 i;
     uint256 constant moonnyx = 7 days * 4 + (2 days);
     uint256 constant moonnyx2 = moonnyx * 2;
     uint256 constant moonnyx3 = moonnyx2 + moonnyx;
@@ -30,16 +30,14 @@ abstract contract Plantashun {
         uint reward;
         uint rewardCount;
         uint cropHarvest;
-        bool lockGerminator;
-        
-        
+        bool lockGerminator;  
     }
     
     mapping(address => uint256) public envelope;
     mapping(address => uint256) public barn;
     mapping(address => uint256) germinator;
     mapping(address => SeedInvestor) seedInvestorsMap;
-    mapping(uint8 => periods) periodSelection;
+    mapping(uint8 => uint256) constant periodSelection;
     
     SeedInvestor[] public holders;
     address[] cropHolders;
