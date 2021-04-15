@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.4.22 <0.9.0;
 
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-// import "@openzeppelin/contracts/security/Pausable.sol";
-// import "@openzeppelin/contracts/token/ERC20/utils/TokenTimelock.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+// import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+// // import "@openzeppelin/contracts/security/Pausable.sol";
+// // import "@openzeppelin/contracts/token/ERC20/utils/TokenTimelock.sol";
+// import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-abstract contract Plantashun {
+import "./Cassava.sol";
+import './Root.sol';
+
+contract Plantashun is Cassava, Root {
 
     address owner;
-    using SafeMath for uint;
-    IERC20 private _root;
-    IERC20 private _crop;
+    address private _c;
+    address private _r;
+    Cassava cassava = Cassava(_c);
+    Root root = Root(_r);
 
     uint128 seedPrice = 1 ether;
 
@@ -31,7 +35,7 @@ abstract contract Plantashun {
 
     struct RootInvestor{
         bool isRootInvestor;
-        uint rewardBase;
+        ufixed8x2 rewardBase;
         uint harvest;
         bool lockGerminator;
         uint256 germ_duration;
@@ -42,15 +46,15 @@ abstract contract Plantashun {
     mapping(address => RootInvestor) rootInvestorsMap;
     mapping(uint8 => uint256) duration;
     mapping(address => bool) public blacklist;
-    mapping(uint256 => uint8) yield;
+    mapping(uint256 => ufixed8x2) yield;
     
     address[] holders;
     address[] cropHolders;
     
-    constructor(IERC20 root, IERC20 crop) {
+    constructor(Cassava _crop, Root _root) {
         // Gardens storage _garden;
-        _root = root;
-        _crop = crop;
+        _r = _root;
+        _c = _crop;
         owner = msg.sender;
         duration[1] = p1;
         duration[2] = moonnyx; 
@@ -76,13 +80,11 @@ abstract contract Plantashun {
     }
 
     modifier hasEnoughRootBalance(uint _qty) {
-        uint bal = _root.balanceOf(msg.sender);
-        require(bal > _qty, "Insufficient balance"); _;
+        require(root.alc_balance[msg.sender] > _qty, "Insufficient balance"); _;
     }
 
     modifier hasEnoughCropBalance(uint _qty) {
-         uint bal = _crop.balanceOf(msg.sender);
-        require(bal > _qty, "Insufficient balance"); _;
+        require(crop.balances > _qty, "Insufficient balance"); _;
     }
 
     function setPercentYield(uint8 _count, uint8 _p) public onlyOwner returns(bool) {
@@ -93,49 +95,52 @@ abstract contract Plantashun {
 
     function tranferRoot(uint256 amount) external onlyOwner {
         address from = msg.sender;
-        _root.transferFrom(from, address(this), amount);
+        root.transferFrom(from, address(this), amount);
         emit TokenTransfer(from);
     }
 
     function transferCassava(uint256 amount) external onlyOwner {
         address from = msg.sender;
-        _crop.transferFrom(from, address(this), amount);
+        crop.transferFrom(from, address(this), amount);
         emit TokenTransfer(from);
     }
 
-    function getSeedBalance() public view returns(uint256) {
-        _root.balanceOf(msg.sender);
+    function getRootBalance() public view returns(uint256) {
+        root.alc_balance[msg.sender];
     }
 
     function getCropBalance() public view returns(uint256) {
-        _crop.balanceOf(msg.sender);
+        crop.balances[msg.sender];
     }
 
-    function buyRoot(uint256 _qty) public {
+    function buyRoot(uint256 _qty) public returns(bool) {
+        address _contract = address(this);
+        address payable _rec = payable(_contract);
         uint initialBalance = msg.sender.balance;
         uint256 amountToPay = _qty * seedPrice;
         require(msg.sender.balance > amountToPay, "Insufficient fund");
         msg.sender.balance - amountToPay;
-        address(this).transfer(amountToPay);
+        _rec.transfer(amountToPay);
         require(address(this).balance > initialBalance, "Anomally detected: transaction reversed");
-        _root.balanceOf[address(this)] - _qty;
-        _root.balanceOf[msg.sender] + _qty;
-        _root.allowance(msg.sender, address(this));
-        _root.approve(address(this), _qty);
-        rootInvestorsMap[msg.sender] = RootInvestor(true, 0, 0, false, 0);
+        root.alc_balance[_rec] - _qty;
+        root.alc_balance[msg.sender] + _qty;
+        root.alc_balance[msg.sender, address(this)];
+        root.approve(address(this), _qty);
+        rootInvestorsMap[msg.sender] = RootInvestor(true, 0, 0, false, 0, 0);
         holders.push(msg.sender);
         rootHoldersCount ++;
 
         emit RootPurchased(msg.sender, _qty, block.timestamp);
+        return true;
     }
 
     function sowSeed(uint _qty, uint8 _duration) public hasRoot hasEnoughRootBalance(_qty) returns(bool) {
         // require(rootInvestorsMap[msg.sender].lockGerminator == false, "Seed already germinated.");
         require(_duration > 0 && _duration <= 6, "Duration out of range");
-        _root.balanceOf[msg.sender] - _qty;
+        root.alc_balance[msg.sender] - _qty;
         germinator[msg.sender] + _qty;
         uint256 k = duration[_duration];
-        uint8 reward_base = yield[k];
+        ufixed8x2 reward_base = yield[k];
         rootInvestorsMap[msg.sender].rewardBase = reward_base;
         rootInvestorsMap[msg.sender].germ_duration = k;
         rootInvestorsMap[msg.sender].sowTime = block.timestamp;
@@ -146,15 +151,16 @@ abstract contract Plantashun {
     }
 
     function harvest() public hasRoot returns(bool, uint256) {
-        require(germinator[msg.sender] > 0 && rootInvestorsMap[msg.sender].lockGerminator = true, "User have no stake");
-        require(block.timestamp >= (rootInvestorsMap[msg.sender].sowTime + rootInvestorsMap[msg.sender].germ_duration, "Root not yet mature"));
+        require(germinator[msg.sender] > 0 && (rootInvestorsMap[msg.sender].lockGerminator = false), "User have no stake");
+        require(block.timestamp >= (rootInvestorsMap[msg.sender].sowTime + rootInvestorsMap[msg.sender].germ_duration), "Root not yet mature");
         uint _s = germinator[msg.sender];
         germinator[msg.sender] - _s;
-        uint _reward_b = rootInvestorsMap[msg.sender].rewardBase;
+        _root.totalSupply() - _s;
+        ufixed8x2 _reward_b = rootInvestorsMap[msg.sender].rewardBase;
         uint _reward = _s + (_s * _reward_b);
 
-        _crop.balanceOf[address(this)] - _reward;
-        _crop.balanceOf[msg.sender] + _reward;
+        crop.balances[address(this)] - _reward;
+        crop.balances[msg.sender] + _reward;
         rootInvestorsMap[msg.sender].harvest = _reward;
 
         emit Harvest(msg.sender, _reward, block.timestamp);
