@@ -1,5 +1,5 @@
-const Migrations = artifacts.require("Migrations");
+const Plantashun = artifacts.require("Plantashun");
 
 module.exports = function (deployer) {
-  deployer.deploy(Migrations);
+  deployer.deploy(Plantashun);
 };
