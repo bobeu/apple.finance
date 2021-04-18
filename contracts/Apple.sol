@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import '../Apple-swap-lib/SafeMath.sol';
+// import '../Apple-swap-lib/SafeMath.sol';
 import '../Apple-swap-lib/IBEP20.sol';
 import '../Apple-swap-lib/BEP20.sol';
-// import '..deps/npm/@appleswap/apple-swap-lib/contracts/access/Ownable.sol';
-
 
 interface IWBNB {
     function deposit() external payable;
@@ -25,13 +23,24 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     uint256 constant moonnyx6 = moonnyx * 6;
     uint256 constant perennial = moonnyx * 12;
     
-    uint256 public _price = 1;
+    uint256 public _price = 1000000000000000000;
+    
+    uint256 public whitelistCounter;
+    
+    uint256 public currentSupply;
     
 //     event TokenTransfer(address from);
     event SeedPurchased(address indexed _buyer, uint256 _amount, uint _time);
     event SownSeed(address indexed _user, uint256 _amount, uint _time);
     event Harvest(address indexed _harvester, uint256 _amount, uint256 _date);
-
+    
+    struct AppInvestor {
+        address _addr;
+        uint256 _deposit;
+        uint256 _depositDate;
+        bool isPaid;
+    }
+    
     struct SeedInvestor{
         bool isAppInvestor;
         uint8 rewardBase;
@@ -48,6 +57,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     mapping(uint8 => uint256) duration;
     
     mapping(uint256 => uint8) yield;
+    
+    mapping(uint256 => AppInvestor) private whitelist;
 
     // Info of each user.
     struct UserInfo {
@@ -86,10 +97,10 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     
     mapping(address => uint256) germinator;
     
-    mapping(address => uint256) barn;
+    mapping(address => uint256) public balancesOf;
     
     // limit 10 BNB here
-    uint256 public limitAmount = 100000000000000000000;
+    uint256 public limitAmount = 10000000000000000000;
     // Total allocation poitns. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
     // The block number when APP mining starts.
@@ -114,7 +125,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         rewardPerBlock = _rewardPerBlock;
         startBlock = _startBlock;
         bonusEndBlock = _bonusEndBlock;
-        adminAddress = msg.sender;
+        adminAddress = _msgSender();
         WBNB = _wbnb;
 
         // staking pool
@@ -140,24 +151,42 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
 
         totalAllocPoint = 1000;
         _mint(adminAddress, _amt);
+        balancesOf[adminAddress] = _amt;
+        currentSupply += _amt;
 
     }
 
     modifier onlyAdmin() {
-        require(msg.sender == adminAddress, "admin: wut?");
+        require(_msgSender() == adminAddress, "admin: wut?");
         _;
     }
     
     modifier invested() {
-        require(seedInvestorMap[msg.sender].isAppInvestor == true); _;
+        require(seedInvestorMap[_msgSender()].isAppInvestor == true); _;
     }
 
     modifier hasEnoughSeedBalance(uint _qty) {
-        require(_balances[msg.sender] > _qty, "Insufficient balance"); _;
+        require(balancesOf[_msgSender()] > _qty, "Insufficient balance"); _;
     }
 
     receive() external payable {
-        assert(msg.sender == WBNB); // only accept BNB via fallback from the WBNB contract
+        assert(_msgSender() == WBNB); // only accept BNB via fallback from the WBNB contract
+    }
+    
+    
+    /**
+     * @dev Creates `amount` tokens and assigns them to `msg.sender`, increasing
+     * the total supply.
+     *
+     * Requirements
+     *
+     * - `msg.sender` must be the token owner
+     */
+    function mint(uint256 amount) public onlyOwner returns (bool) {
+        require(totalSupply().add(amount) <= fxsupply, "Supply threshold is reached");
+        _mint(msg.sender, amount);
+        currentSupply += amount;
+        return true;
     }
     
     function setYield(uint8 _duration, uint8 _newYieldVal) public onlyAdmin returns(bool) {
@@ -238,7 +267,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     // Stake tokens to SmartChef
     function deposit() public payable {
         PoolInfo storage pool = poolInfo[0];
-        UserInfo storage user = userInfo[msg.sender];
+        UserInfo storage user = userInfo[_msgSender()];
 
         require (user.amount.add(msg.value) <= limitAmount, 'exceed the top');
         require (!user.inBlackList, 'in black list');
@@ -248,7 +277,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
 
             uint256 pending = user.amount.mul(pool.accAppPerShare).div(1e12).sub(user.rewardDebt);
             if(pending > 0) {
-                rewardToken.transfer(address(msg.sender), pending);
+                rewardToken.transfer(address(_msgSender()), pending);
             }
         }
         if(msg.value > 0) {
@@ -258,7 +287,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         }
         user.rewardDebt = user.amount.mul(pool.accAppPerShare).div(1e12);
 
-        emit Deposit(msg.sender, msg.value);
+        emit Deposit(_msgSender(), msg.value);
     }
 
     function safeTransferBNB(address to, uint256 value) internal {
@@ -270,29 +299,29 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     // Withdraw tokens from STAKING.
     function withdraw(uint256 _amount) public {
         PoolInfo storage pool = poolInfo[0];
-        UserInfo storage user = userInfo[msg.sender];
+        UserInfo storage user = userInfo[_msgSender()];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(0);
         uint256 pending = user.amount.mul(pool.accAppPerShare).div(1e12).sub(user.rewardDebt);
         if(pending > 0 && !user.inBlackList) {
-            rewardToken.transfer(address(msg.sender), pending);
+            rewardToken.transfer(address(_msgSender()), pending);
         }
         if(_amount > 0) {
             user.amount = user.amount.sub(_amount);
             IWBNB(WBNB).withdraw(_amount);
-            safeTransferBNB(address(msg.sender), _amount);
+            safeTransferBNB(address(_msgSender()), _amount);
         }
         user.rewardDebt = user.amount.mul(pool.accAppPerShare).div(1e12);
 
-        emit Withdraw(msg.sender, _amount);
+        emit Withdraw(_msgSender(), _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdraw() public {
         PoolInfo storage pool = poolInfo[0];
-        UserInfo storage user = userInfo[msg.sender];
-        pool.lpToken.transfer(address(msg.sender), user.amount);
-        emit EmergencyWithdraw(msg.sender, user.amount);
+        UserInfo storage user = userInfo[_msgSender()];
+        pool.lpToken.transfer(address(_msgSender()), user.amount);
+        emit EmergencyWithdraw(_msgSender(), user.amount);
         user.amount = 0;
         user.rewardDebt = 0;
     }
@@ -300,60 +329,62 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     // Withdraw reward. EMERGENCY ONLY.
     function emergencyRewardWithdraw(uint256 _amount) public onlyOwner {
         require(_amount < rewardToken.balanceOf(address(this)), 'not enough token');
-        rewardToken.transfer(address(msg.sender), _amount);
+        rewardToken.transfer(address(_msgSender()), _amount);
     }
     
-    function buyApple(uint256 _qty) external payable returns(bool) {
-        address payable _contract = payable(address(this));
-        uint senderInitBalance = msg.sender.balance;
-        uint256 amountToPay = _qty * _price;
-        require(senderInitBalance > amountToPay, "Insufficient fund");
-        msg.sender.balance.sub(amountToPay);
-        _contract.balance.add(amountToPay);
-        require(msg.sender.balance < senderInitBalance, "Anomally detected: transaction reversed");
-        _balances[_contract].sub(_qty);
-        _balances[msg.sender].add(_qty);
-        approve(address(this), _qty);
-        seedInvestorMap[msg.sender] = SeedInvestor(true, 0, 0, false, 0, 0);
-        realInvestors.push(msg.sender);
+    function getWhiteisted() public payable returns(bool) {
+        whitelistCounter++;
+        require(msg.value > 100000000000000000);
+        payable(adminAddress).transfer(msg.value);
+        whitelist[whitelistCounter] = AppInvestor(_msgSender(), msg.value, block.timestamp, false);
+        return true;
+    }
+    
+    function forwardAPPTOKEN(uint256 _SN, uint256 _qty) external payable onlyAdmin returns(bool) {
+        require(!whitelist[_SN].isPaid, "User already received token");
         holdersCount ++;
-
-        emit SeedPurchased(msg.sender, _qty, block.timestamp);
+        balancesOf[address(this)].sub(_qty);
+        balancesOf[_msgSender()].add(_qty);
+        approve(address(this), _qty);
+        seedInvestorMap[_msgSender()] = SeedInvestor(true, 0, 0, false, 0, 0);
+        realInvestors.push(_msgSender());
+        
+        emit SeedPurchased(whitelist[_SN]._addr, _qty, block.timestamp);
         return true;
     }
 
-    function sowSeed(uint _qty, uint8 _duration) public invested hasEnoughSeedBalance(_qty) returns(bool) {
-        // require(rootInvestorsMap[msg.sender].lockGerminator == false, "Seed already germinated.");
+    function stakeAPP(uint _qty, uint8 _duration) public invested hasEnoughSeedBalance(_qty) returns(bool) {
+        // require(rootInvestorsMap[_msgSender()].lockGerminator == false, "Seed already germinated.");
         require(_duration > 0 && _duration <= 6, "Duration out of range");
-        uint init_balance = _balances[msg.sender];
-        _balances[msg.sender] - _qty;
-        germinator[msg.sender] + _qty;
+        uint init_balance = balancesOf[_msgSender()];
+        balancesOf[_msgSender()] - _qty;
+        germinator[_msgSender()] + _qty;
         uint256 k = duration[_duration];
         uint8 reward_base = yield[k];
-        seedInvestorMap[msg.sender].rewardBase = reward_base;
-        seedInvestorMap[msg.sender].germ_duration = k;
-        seedInvestorMap[msg.sender].sowTime = block.timestamp;
-        seedInvestorMap[msg.sender].lockGerminator = true;
-        require(_balances[msg.sender] == init_balance.add(_qty));
+        seedInvestorMap[_msgSender()].rewardBase = reward_base;
+        seedInvestorMap[_msgSender()].germ_duration = k;
+        seedInvestorMap[_msgSender()].sowTime = block.timestamp;
+        seedInvestorMap[_msgSender()].lockGerminator = true;
+        require(balancesOf[_msgSender()] == init_balance.add(_qty));
 
-        emit SownSeed(msg.sender, _qty, block.timestamp);
+        emit SownSeed(_msgSender(), _qty, block.timestamp);
         return true;
     }
 
-    function harvest() public invested returns(bool, uint256) {
-        require(germinator[msg.sender] > 0 && (seedInvestorMap[msg.sender].lockGerminator = false), "User have no stake");
-        require(block.timestamp >= (seedInvestorMap[msg.sender].sowTime + seedInvestorMap[msg.sender].germ_duration), "Root not yet mature");
-        uint _s = germinator[msg.sender];
-        germinator[msg.sender] - _s;
-        _burn(msg.sender, _s);
-        uint8 _reward_b = seedInvestorMap[msg.sender].rewardBase;
-        uint _reward = _s + (_s * _reward_b);
+    function harvest(address _ad) public invested returns(bool, uint256) {
+        require(germinator[_msgSender()] > 0 && (seedInvestorMap[_msgSender()].lockGerminator = false), "User have no stake");
+        require(block.timestamp >= (seedInvestorMap[_msgSender()].sowTime + seedInvestorMap[_msgSender()].germ_duration), "Root not yet mature");
+        uint _s = germinator[_msgSender()];
+        germinator[_msgSender()] - _s;
+        _burn(_msgSender(), _s);
+        uint8 _reward_b = seedInvestorMap[_msgSender()].rewardBase;
+        uint _reward = _s * _reward_b;
 
-        _balances[address(this)] - _reward;
-        barn[msg.sender] + _reward;
-        seedInvestorMap[msg.sender].harvest = _reward;
+        balancesOf[address(this)].sub(_reward);
+        balancesOf[_ad].add(_reward);
+        seedInvestorMap[_msgSender()].harvest = _reward;
 
-        emit Harvest(msg.sender, _reward, block.timestamp);
+        emit Harvest(_msgSender(), _reward, block.timestamp);
         return (true, _reward);
     }
     
