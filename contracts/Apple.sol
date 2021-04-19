@@ -23,7 +23,9 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     uint256 constant moonnyx6 = moonnyx * 6;
     uint256 constant perennial = moonnyx * 12;
     
-    uint256 public _price = 1000000000000000000;
+    uint256 constant priceBase = 1 gwei;
+    
+    uint256 internal _price = 1000000/priceBase;
     
     uint256 public whitelistCounter;
     
@@ -36,7 +38,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     
     struct AppInvestor {
         address _addr;
-        uint256 _deposit;
+        uint256 _token;
         uint256 _depositDate;
         bool isPaid;
     }
@@ -58,7 +60,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     
     mapping(uint256 => uint8) yield;
     
-    mapping(uint256 => AppInvestor) private whitelist;
+    mapping(address => AppInvestor) private whitelist;
 
     // Info of each user.
     struct UserInfo {
@@ -150,8 +152,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         yield[perennial] = 50;
 
         totalAllocPoint = 1000;
-        _mint(adminAddress, _amt);
-        balancesOf[adminAddress] = _amt;
+        _mint(address(this), _amt);
+        balancesOf[address(this)] = _amt;
         currentSupply += _amt;
 
     }
@@ -332,16 +334,18 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         rewardToken.transfer(address(_msgSender()), _amount);
     }
     
-    function getWhiteisted() public payable returns(bool) {
+    function getWhiteisted(uint _amt) public payable returns(uint, uint, uint) {
         whitelistCounter++;
-        require(msg.value > 100000000000000000);
-        payable(adminAddress).transfer(msg.value);
-        whitelist[whitelistCounter] = AppInvestor(_msgSender(), msg.value, block.timestamp, false);
-        return true;
+        uint amtToSend = _amt.mul(priceBase);
+        // require(msg.value >= _price.mul(5000) && msg.value == amtToSend, "Minimum buy is 500 APP");
+        // payable(adminAddress).transfer(msg.value);
+        // whitelist[_msgSender()] = AppInvestor(_msgSender(), _amt, block.timestamp, false);
+        return (amtToSend, msg.value, _price);
     }
-    
-    function forwardAPPTOKEN(uint256 _SN, uint256 _qty) external payable onlyAdmin returns(bool) {
-        require(!whitelist[_SN].isPaid, "User already received token");
+
+    function claimToken(uint256 _qty) external payable onlyAdmin returns(bool) {
+        require(!whitelist[_msgSender()].isPaid, "User already received token");
+        require(block.timestamp.add(3 days) >= whitelist[_msgSender()]._depositDate, "Claim date not yet");
         holdersCount ++;
         balancesOf[address(this)].sub(_qty);
         balancesOf[_msgSender()].add(_qty);
@@ -349,7 +353,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         seedInvestorMap[_msgSender()] = SeedInvestor(true, 0, 0, false, 0, 0);
         realInvestors.push(_msgSender());
         
-        emit SeedPurchased(whitelist[_SN]._addr, _qty, block.timestamp);
+        emit SeedPurchased(_msgSender(), _qty, block.timestamp);
         return true;
     }
 
@@ -388,8 +392,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         return (true, _reward);
     }
     
-    function setPrice(uint256 _newPrice) public onlyAdmin returns(bool) {
-        _price = _newPrice;
+    function setPriceBase(uint256 _newPriceBase) public onlyAdmin returns(bool) {
+        _price = 1000000/_newPriceBase;
         return true;
     }
 
