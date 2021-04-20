@@ -23,13 +23,13 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     uint256 constant moonnyx6 = moonnyx * 6;
     uint256 constant perennial = moonnyx * 12;
     
-    uint256 constant priceBase = 1 gwei;
+    // uint256 constant priceBase = 1 gwei;
     
-    uint256 internal _price = 1000000/priceBase;
+    uint256 internal _price = 1 gwei;
     
     uint256 public investorsMapCounter;
     
-    uint256 public currentSupply;
+    // uint256 public currentSupply;
     
 //     event TokenTransfer(address from);
     event SeedPurchased(address indexed _buyer, uint256 _amount, uint _time);
@@ -50,7 +50,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     
     address[] realInvestors;
 
-    mapping(address => Investor) private investorsMap;
+    mapping(address => Investor) public investorsMap;
     
     mapping(uint8 => uint256) duration;
     
@@ -65,7 +65,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
 
     // Info of each pool.
     struct PoolInfo {
-        IBEP20 lpToken;           // Address of LP token contract.
+        // IBEP20 lpToken;           // Address of LP token contract.
         uint256 allocPoint;       // How many allocation points assigned to this pool. APPs to distribute per block.
         uint256 lastRewardBlock;  // Last block number that APPs distribution occurs.
         uint256 accAppPerShare; // Accumulated APPs per share, times 1e12. See below.
@@ -93,8 +93,6 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     
     mapping(address => uint256) germinator;
     
-    mapping(address => uint256) public balancesOf;
-    
     mapping(address => bool) public isinvestorsMaped;
     
     // limit 10 BNB here
@@ -109,9 +107,10 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 amount);
+    event Unstaked(address indexed _addr, uint _amt);
 
     constructor(
-        IBEP20 _lp,
+        // IBEP20 _lp,
         IBEP20 _rewardToken,
         uint256 _rewardPerBlock,
         uint256 _startBlock,
@@ -128,7 +127,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
 
         // staking pool
         poolInfo.push(PoolInfo({
-            lpToken: _lp,
+            // lpToken: _lp,
             allocPoint: 1000,
             lastRewardBlock: startBlock,
             accAppPerShare: 0
@@ -149,8 +148,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
 
         totalAllocPoint = 1000;
         _mint(address(this), _amt);
-        balancesOf[address(this)] = _amt;
-        currentSupply += _amt;
+        balances[address(this)] = _amt;
+        cS += _amt;
 
     }
 
@@ -164,7 +163,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     }
 
     modifier hasEnoughSeedBalance(uint _qty) {
-        require(balancesOf[_msgSender()] > _qty, "Insufficient balance"); _;
+        require(balances[_msgSender()] > _qty, "Insufficient balance"); _;
     }
 
     receive() external payable {
@@ -181,9 +180,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
      * - `msg.sender` must be the token owner
      */
     function mint(uint256 amount) public onlyOwner returns (bool) {
-        require(totalSupply().add(amount) <= fxsupply, "Supply threshold is reached");
+        require(cS.add(amount) <= fxsupply, "Supply threshold is reached");
         _mint(msg.sender, amount);
-        currentSupply += amount;
         return true;
     }
     
@@ -227,7 +225,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[_user];
         uint256 accAppPerShare = pool.accAppPerShare;
-        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+        uint256 lpSupply = balances[address(this)];
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
             uint256 appReward = multiplier.mul(rewardPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
@@ -242,7 +240,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
-        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+        uint256 lpSupply = balances[address(this)];
         if (lpSupply == 0) {
             pool.lastRewardBlock = block.number;
             return;
@@ -316,9 +314,9 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdraw() public {
-        PoolInfo storage pool = poolInfo[0];
+        // PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[_msgSender()];
-        pool.lpToken.transfer(address(_msgSender()), user.amount);
+        payable(_msgSender()).transfer(user.amount);
         emit EmergencyWithdraw(_msgSender(), user.amount);
         user.amount = 0;
         user.rewardDebt = 0;
@@ -326,19 +324,20 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
 
     // Withdraw reward. EMERGENCY ONLY.
     function emergencyRewardWithdraw(uint256 _amount) public onlyOwner {
-        require(_amount < rewardToken.balanceOf(address(this)), 'not enough token');
+        require(_amount < balances[address(this)], 'not enough token');
         rewardToken.transfer(address(_msgSender()), _amount);
     }
     
     function getWhiteisted(uint _amt) public payable returns(uint, uint, uint) {
         investorsMapCounter++;
-        uint amtToSend = _amt.mul(priceBase);
+        uint amtToSend = _amt.mul(_price);
         require(msg.value >= _price.mul(5000) && msg.value >= amtToSend, "Minimum buy is 500 APP");
         payable(adminAddress).transfer(msg.value);
         investorsMap[_msgSender()]._addr = _msgSender();
         investorsMap[_msgSender()].isWhiteListed = true;
         investorsMap[_msgSender()]._depositDate = block.timestamp;
-        isinvestorsMaped[_msgSender()]= true;
+        isinvestorsMaped[_msgSender()] = true;
+        investorsMap[_msgSender()]._token = _amt;
         return (amtToSend, msg.value, _price);
     }
 
@@ -347,8 +346,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         require(investorsMap[_msgSender()].isPaid == false, "User already received token");
         require(block.timestamp.add(1 days) >= investorsMap[_msgSender()]._depositDate, "Claim date not yet");
         uint claim = investorsMap[_msgSender()]._token;
-        balancesOf[address(this)].sub(claim);
-        balancesOf[_msgSender()].add(claim);
+        balances[address(this)].sub(claim);
+        balances[_msgSender()].add(claim);
         approve(address(this), claim);
         investorsMap[_msgSender()]._token = 0;
         investorsMap[_msgSender()].isWhiteListed = false;
@@ -361,8 +360,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
 
     function stakeAPP(uint _qty, uint8 _duration) public hasEnoughSeedBalance(_qty) returns(bool) {
         require(_duration > 0 && _duration <= 6, "Duration out of range");
-        uint init_balance = balancesOf[_msgSender()];
-        balancesOf[_msgSender()] - _qty;
+        uint init_balance = balances[_msgSender()];
+        balances[_msgSender()] - _qty;
         germinator[_msgSender()] + _qty;
         uint256 k = duration[_duration];
         uint8 reward_base = yield[k];
@@ -370,9 +369,21 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         investorsMap[_msgSender()]._duration = k;
         investorsMap[_msgSender()]._depositDate = block.timestamp;
         investorsMap[_msgSender()].lockGerminator = true;
-        require(balancesOf[_msgSender()] == init_balance.add(_qty));
+        require(balances[_msgSender()] == init_balance.add(_qty));
 
         emit SownSeed(_msgSender(), _qty, block.timestamp);
+        return true;
+    }
+    
+    function unstakeAPP() public returns(bool) {
+        investorsMap[_msgSender()].lockGerminator = false;
+        
+        uint amtDue = germinator[_msgSender()].mul(investorsMap[_msgSender()].rewardBase);
+        germinator[_msgSender()].sub(amtDue);
+        balances[_msgSender()].add(amtDue);
+        investorsMap[_msgSender ()].harvest = amtDue; 
+
+        emit Unstaked(_msgSender(), amtDue);
         return true;
     }
 
@@ -385,8 +396,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         uint8 _reward_b = investorsMap[_msgSender()].rewardBase;
         uint _reward = _s * _reward_b;
 
-        balancesOf[address(this)].sub(_reward);
-        balancesOf[_ad].add(_reward);
+        balances[address(this)].sub(_reward);
+        balances[_ad].add(_reward);
         investorsMap[_msgSender()].harvest = _reward;
 
         emit Harvest(_msgSender(), _reward, block.timestamp);
