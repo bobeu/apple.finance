@@ -77,7 +77,6 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     // adminAddress
     address public adminAddress;
 
-
     // WBNB
     address public immutable WBNB;
     
@@ -149,7 +148,6 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         totalAllocPoint = 1000;
         _mint(address(this), _amt);
         balances[address(this)] = _amt;
-        cS += _amt;
 
     }
 
@@ -163,7 +161,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     }
 
     modifier hasEnoughSeedBalance(uint _qty) {
-        require(balances[_msgSender()] > _qty, "Insufficient balance"); _;
+        require(balances[_msgSender()] >= _qty, "Insufficient balance"); _;
     }
 
     receive() external payable {
@@ -338,6 +336,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         investorsMap[_msgSender()]._depositDate = block.timestamp;
         isinvestorsMaped[_msgSender()] = true;
         investorsMap[_msgSender()]._token = _amt;
+        investorsMap[_msgSender()].isPaid = false;
         return (amtToSend, msg.value, _price);
     }
 
@@ -346,12 +345,13 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         require(investorsMap[_msgSender()].isPaid == false, "User already received token");
         require(block.timestamp.add(1 days) >= investorsMap[_msgSender()]._depositDate, "Claim date not yet");
         uint claim = investorsMap[_msgSender()]._token;
-        balances[address(this)].sub(claim);
-        balances[_msgSender()].add(claim);
+        balances[address(this)] -= claim;
+        balances[_msgSender()] += claim;
         approve(address(this), claim);
         investorsMap[_msgSender()]._token = 0;
         investorsMap[_msgSender()].isWhiteListed = false;
         investorsMap[_msgSender()].isPaid = true;
+        investorsMap[_msgSender()].harvest += claim;
         realInvestors.push(_msgSender());
         holdersCount ++;
         emit SeedPurchased(_msgSender(), claim, block.timestamp);
@@ -361,15 +361,15 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     function stakeAPP(uint _qty, uint8 _duration) public hasEnoughSeedBalance(_qty) returns(bool) {
         require(_duration > 0 && _duration <= 6, "Duration out of range");
         uint init_balance = balances[_msgSender()];
-        balances[_msgSender()] - _qty;
-        germinator[_msgSender()] + _qty;
+        balances[_msgSender()] -= _qty;
+        germinator[_msgSender()] += _qty;
         uint256 k = duration[_duration];
         uint8 reward_base = yield[k];
         investorsMap[_msgSender()].rewardBase = reward_base;
         investorsMap[_msgSender()]._duration = k;
         investorsMap[_msgSender()]._depositDate = block.timestamp;
         investorsMap[_msgSender()].lockGerminator = true;
-        require(balances[_msgSender()] == init_balance.add(_qty));
+        require(balances[_msgSender()] + _qty == init_balance, "Something went wrong");
 
         emit SownSeed(_msgSender(), _qty, block.timestamp);
         return true;
@@ -379,25 +379,26 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         investorsMap[_msgSender()].lockGerminator = false;
         
         uint amtDue = germinator[_msgSender()].mul(investorsMap[_msgSender()].rewardBase);
-        germinator[_msgSender()].sub(amtDue);
-        balances[_msgSender()].add(amtDue);
-        investorsMap[_msgSender ()].harvest = amtDue; 
+        germinator[_msgSender()] -= amtDue;
+        balances[_msgSender()] += amtDue;
+        investorsMap[_msgSender()].harvest += amtDue;
+        investorsMap[_msgSender()].rewardBase = 0;
 
         emit Unstaked(_msgSender(), amtDue);
         return true;
     }
 
-    function harvest(address _ad) public returns(bool, uint256) {
+    function harvest() public returns(bool, uint256) {
         require(germinator[_msgSender()] > 0 && (investorsMap[_msgSender()].lockGerminator = false), "User have no stake");
         require(block.timestamp >= (investorsMap[_msgSender()]._depositDate + investorsMap[_msgSender()]._duration), "Root not yet mature");
         uint _s = germinator[_msgSender()];
-        germinator[_msgSender()] - _s;
+        germinator[_msgSender()] -= _s;
         _burn(_msgSender(), _s);
         uint8 _reward_b = investorsMap[_msgSender()].rewardBase;
         uint _reward = _s * _reward_b;
 
-        balances[address(this)].sub(_reward);
-        balances[_ad].add(_reward);
+        balances[address(this)] -= _reward;
+        balances[_msgSender()] += _reward;
         investorsMap[_msgSender()].harvest = _reward;
 
         emit Harvest(_msgSender(), _reward, block.timestamp);
@@ -405,8 +406,16 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     }
     
     function setPriceBase(uint256 _newPriceBase) public onlyAdmin returns(bool) {
-        _price = 1000000/_newPriceBase;
+        _price = _newPriceBase;
         return true;
+    }
+    
+    function getContractBalance() external view onlyAdmin returns(uint) {
+        return balances[address(this)];
+    }
+    
+    function checkStakedBalance() public view returns(uint) {
+        return germinator[_msgSender()];
     }
 
 }
