@@ -27,7 +27,7 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     
     uint256 internal _price = 1000000/priceBase;
     
-    uint256 public whitelistCounter;
+    uint256 public investorsMapCounter;
     
     uint256 public currentSupply;
     
@@ -36,32 +36,26 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     event SownSeed(address indexed _user, uint256 _amount, uint _time);
     event Harvest(address indexed _harvester, uint256 _amount, uint256 _date);
     
-    struct AppInvestor {
+    struct Investor{
         address _addr;
-        uint256 _token;
-        uint256 _depositDate;
         bool isPaid;
-    }
-    
-    struct SeedInvestor{
-        bool isAppInvestor;
         uint8 rewardBase;
+        uint256 _token;
         uint harvest;
         bool lockGerminator;
-        uint256 germ_duration;
-        uint256 sowTime;
+        uint256 _duration;
+        uint256 _depositDate;
+        bool isWhiteListed;
     }
     
     address[] realInvestors;
 
-    mapping(address => SeedInvestor) seedInvestorMap;
+    mapping(address => Investor) private investorsMap;
     
     mapping(uint8 => uint256) duration;
     
     mapping(uint256 => uint8) yield;
     
-    mapping(address => AppInvestor) private whitelist;
-
     // Info of each user.
     struct UserInfo {
         uint256 amount;     // How many LP tokens the user has provided.
@@ -100,6 +94,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     mapping(address => uint256) germinator;
     
     mapping(address => uint256) public balancesOf;
+    
+    mapping(address => bool) public isinvestorsMaped;
     
     // limit 10 BNB here
     uint256 public limitAmount = 10000000000000000000;
@@ -163,8 +159,8 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
         _;
     }
     
-    modifier invested() {
-        require(seedInvestorMap[_msgSender()].isAppInvestor == true); _;
+    modifier iswhitelisted() {
+        require(investorsMap[_msgSender()].isWhiteListed == true); _;
     }
 
     modifier hasEnoughSeedBalance(uint _qty) {
@@ -335,58 +331,63 @@ contract AppleFinance is Ownable, BEP20('Apple-finance Token', 'APP'){
     }
     
     function getWhiteisted(uint _amt) public payable returns(uint, uint, uint) {
-        whitelistCounter++;
+        investorsMapCounter++;
         uint amtToSend = _amt.mul(priceBase);
-        // require(msg.value >= _price.mul(5000) && msg.value == amtToSend, "Minimum buy is 500 APP");
-        // payable(adminAddress).transfer(msg.value);
-        // whitelist[_msgSender()] = AppInvestor(_msgSender(), _amt, block.timestamp, false);
+        require(msg.value >= _price.mul(5000) && msg.value >= amtToSend, "Minimum buy is 500 APP");
+        payable(adminAddress).transfer(msg.value);
+        investorsMap[_msgSender()]._addr = _msgSender();
+        investorsMap[_msgSender()].isWhiteListed = true;
+        investorsMap[_msgSender()]._depositDate = block.timestamp;
+        isinvestorsMaped[_msgSender()]= true;
         return (amtToSend, msg.value, _price);
     }
 
-    function claimToken(uint256 _qty) external payable onlyAdmin returns(bool) {
-        require(!whitelist[_msgSender()].isPaid, "User already received token");
-        require(block.timestamp.add(3 days) >= whitelist[_msgSender()]._depositDate, "Claim date not yet");
-        holdersCount ++;
-        balancesOf[address(this)].sub(_qty);
-        balancesOf[_msgSender()].add(_qty);
-        approve(address(this), _qty);
-        seedInvestorMap[_msgSender()] = SeedInvestor(true, 0, 0, false, 0, 0);
+    function claimToken() external payable iswhitelisted returns(bool) {
+        require(isinvestorsMaped[_msgSender()] == true, "Not investorsMaped");
+        require(investorsMap[_msgSender()].isPaid == false, "User already received token");
+        require(block.timestamp.add(1 days) >= investorsMap[_msgSender()]._depositDate, "Claim date not yet");
+        uint claim = investorsMap[_msgSender()]._token;
+        balancesOf[address(this)].sub(claim);
+        balancesOf[_msgSender()].add(claim);
+        approve(address(this), claim);
+        investorsMap[_msgSender()]._token = 0;
+        investorsMap[_msgSender()].isWhiteListed = false;
+        investorsMap[_msgSender()].isPaid = true;
         realInvestors.push(_msgSender());
-        
-        emit SeedPurchased(_msgSender(), _qty, block.timestamp);
+        holdersCount ++;
+        emit SeedPurchased(_msgSender(), claim, block.timestamp);
         return true;
     }
 
-    function stakeAPP(uint _qty, uint8 _duration) public invested hasEnoughSeedBalance(_qty) returns(bool) {
-        // require(rootInvestorsMap[_msgSender()].lockGerminator == false, "Seed already germinated.");
+    function stakeAPP(uint _qty, uint8 _duration) public hasEnoughSeedBalance(_qty) returns(bool) {
         require(_duration > 0 && _duration <= 6, "Duration out of range");
         uint init_balance = balancesOf[_msgSender()];
         balancesOf[_msgSender()] - _qty;
         germinator[_msgSender()] + _qty;
         uint256 k = duration[_duration];
         uint8 reward_base = yield[k];
-        seedInvestorMap[_msgSender()].rewardBase = reward_base;
-        seedInvestorMap[_msgSender()].germ_duration = k;
-        seedInvestorMap[_msgSender()].sowTime = block.timestamp;
-        seedInvestorMap[_msgSender()].lockGerminator = true;
+        investorsMap[_msgSender()].rewardBase = reward_base;
+        investorsMap[_msgSender()]._duration = k;
+        investorsMap[_msgSender()]._depositDate = block.timestamp;
+        investorsMap[_msgSender()].lockGerminator = true;
         require(balancesOf[_msgSender()] == init_balance.add(_qty));
 
         emit SownSeed(_msgSender(), _qty, block.timestamp);
         return true;
     }
 
-    function harvest(address _ad) public invested returns(bool, uint256) {
-        require(germinator[_msgSender()] > 0 && (seedInvestorMap[_msgSender()].lockGerminator = false), "User have no stake");
-        require(block.timestamp >= (seedInvestorMap[_msgSender()].sowTime + seedInvestorMap[_msgSender()].germ_duration), "Root not yet mature");
+    function harvest(address _ad) public returns(bool, uint256) {
+        require(germinator[_msgSender()] > 0 && (investorsMap[_msgSender()].lockGerminator = false), "User have no stake");
+        require(block.timestamp >= (investorsMap[_msgSender()]._depositDate + investorsMap[_msgSender()]._duration), "Root not yet mature");
         uint _s = germinator[_msgSender()];
         germinator[_msgSender()] - _s;
         _burn(_msgSender(), _s);
-        uint8 _reward_b = seedInvestorMap[_msgSender()].rewardBase;
+        uint8 _reward_b = investorsMap[_msgSender()].rewardBase;
         uint _reward = _s * _reward_b;
 
         balancesOf[address(this)].sub(_reward);
         balancesOf[_ad].add(_reward);
-        seedInvestorMap[_msgSender()].harvest = _reward;
+        investorsMap[_msgSender()].harvest = _reward;
 
         emit Harvest(_msgSender(), _reward, block.timestamp);
         return (true, _reward);
